@@ -1,0 +1,13 @@
+# Carpeta de datos
+data_jps_singlekey/
+
+# Imágenes o resultados
+*.png
+*.jpg
+*.jpeg
+
+# Ignorar carpetas de Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
