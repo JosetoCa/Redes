@@ -58,21 +58,21 @@ def parse_tfrecord(example_proto):
     }
     parsed = tf.io.parse_single_example(example_proto, features)
 
-    # N puede ser tensor; construimos reshape dinámico y luego fijamos shape estática
+    # N puede ser tensor; construimos reshape dinámico y luego fijamos tamaño
     N = tf.cast(parsed['N'], tf.int32)
 
     # decode JPS
     jps = tf.io.decode_raw(parsed['jps_raw'], tf.float32)
     jps = tf.reshape(jps, tf.stack([N, N]))
     jps = tf.expand_dims(jps, -1)               # (N, N, 1)
-    # Hacer shape estática si se conoce N en tiempo de diseño:
-    jps.set_shape([None, None, 1])              # deja que TFGraph lo determine si no es fijo
+    # Hacer tamaño fijo si se conoce N en tiempo de diseño:
+    jps.set_shape([None, None, 1])              
 
     # decode MNIST target
-    target = tf.io.decode_raw(parsed['mnist_raw'], tf.float32)   # guardaste float32
+    target = tf.io.decode_raw(parsed['mnist_raw'], tf.float32) 
     target = tf.reshape(target, (28, 28))
     target = tf.expand_dims(target, -1)         # (28, 28, 1)
-    # Normalizamos target a [0,1] — en tu script guardaste valores 0..255 como float32
+    # Normalizamos target a [0,1] 
     target = target / 255.0
     target.set_shape([28, 28, 1])
 
@@ -104,9 +104,7 @@ def make_dataset(tfrecord_pattern, batch_size=64, shuffle=True, compression=None
 # ---------- modelo: autoencoder simple (entrada: JPS -> salida: 28x28 image) ----------
 from tensorflow.keras import layers, models, regularizers
 
-def build_model(input_shape,
-                l2=1e-4,
-                dropout_rate=0.15):
+def build_model(input_shape, l2=1e-4, dropout_rate=0.15):
     """
     Autoencoder con BatchNorm + L2 + SpatialDropout en bottleneck.
     Parámetros:
@@ -139,7 +137,7 @@ def build_model(input_shape,
 
     # Decoder
     x = layers.UpSampling2D(2)(x)
-    # si querés usar skip connections: concatená aquí con la salida previa (opcional)
+    
     x = conv_block(x, 64)
 
     x = layers.UpSampling2D(2)(x)
