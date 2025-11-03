@@ -1,5 +1,6 @@
 # Carpeta de datos
 data_jps_singlekey/
+data_jps_singleobj/
 
 # Imágenes o resultados
 *.png
