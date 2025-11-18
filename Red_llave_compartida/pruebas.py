@@ -38,10 +38,10 @@ def embed_center(container_shape, small):
     r0 = (H - h) // 2
     c0 = (W - w) // 2
     return embed_at(container_shape, small, (r0, c0))
+
 def random_phase_mask(N, seed=None):
     rng = np.random.default_rng(seed)
     return np.exp(1j * 2 * np.pi * rng.random((N, N)))
-
 
 def shift_field(field, dx=0, dy=0):
     """Traslada un campo en el espacio real usando desplazamiento entero (wrap-around)."""
@@ -51,15 +51,15 @@ def shift_field(field, dx=0, dy=0):
 # ----------------------- parámetros -----------------------
 N = 160                    # tamaño matriz
 offset = 40                # desplazamiento horizontal (en píxeles) entre objeto y llave
-seed = 18725                 # semilla reproducible
+seed = 1234                # semilla reproducible
 path = "C:\Proyectos\Prueba-red\Red_llave_compartida\letra.png"
 
 # crear objeto y llave
-# im = Image.open(path).convert("L")  # grayscale
-# arr = np.array(im).astype(np.float32)
+
 obj_amp = embed_center((N,N), x_train[1])
 pm_obj = random_phase_mask(N, seed=seed)
-pm_key = random_phase_mask(N, seed=3919)
+pm_key = random_phase_mask(N, seed=9999)
+pm_key = np.roll(pm_key, shift=10, axis=1)
 
 # campo del objeto y de la llave (amplitud * fase aleatoria)
 obj_field = obj_amp * pm_obj/np.max(obj_amp)
@@ -123,7 +123,7 @@ ax[5].set_title('Reconstrucción tentativa (abs)')
 ax[5].axis('off')
 
 plt.tight_layout()
-plt.imsave("C:\Proyectos\Prueba-red\Red_llave_compartida\input1.png", JPS/np.max(JPS), cmap="gray") 
+plt.imsave("C:\Proyectos\Prueba-red\Red_llave_compartida\input3.png", JPS/np.max(JPS), cmap="gray") 
 
 
 plt.show()

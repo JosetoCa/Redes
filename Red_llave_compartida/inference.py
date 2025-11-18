@@ -7,8 +7,8 @@ import matplotlib.pyplot as plt
 
 # --- Ajustes básicos ---
 MODEL_PATH = "C:\Proyectos\Prueba-red\Red_llave_compartida\model_checkpoint.keras"   # fichero Keras que guardaste con ModelCheckpoint
-INPUT_PATH = "C:\Proyectos\Prueba-red\Red_llave_compartida\input1.png"                 # archivo de entrada (cambiar según necesites)
-OUTPUT_PATH = "C:\Proyectos\Prueba-red\Red_llave_compartida\output1.png"             # archivo a escribir con la predicción
+INPUT_PATH = "C:\Proyectos\Prueba-red\Red_llave_compartida\input3.png"                 # archivo de entrada (cambiar según necesites)
+OUTPUT_PATH = "C:\Proyectos\Prueba-red\Red_llave_compartida\output4.png"             # archivo a escribir con la predicción
 ASSUME_JPS_RANGE_0_1 = True              # si tus JPS están en 0..1. Si no, ajusta escala.
 TARGET_SIZE = None   # si None: intenta inferir N desde la imagen; si quieres forzar N usa (N,N)
 
