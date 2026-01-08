@@ -1,11 +1,7 @@
 import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
-import Clase_propagacion as prop
-import Clase_objetosEntrada as OE
 from numpy.fft import fft2, ifft2, fftshift, ifftshift
-from PIL import Image
-
 
 # 1. Cargar MNIST (ya preparado por Keras)
 (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
@@ -52,21 +48,21 @@ def shift_field(field, dx=0, dy=0):
 N = 160                    # tamaño matriz
 offset = 40                # desplazamiento horizontal (en píxeles) entre objeto y llave
 seed = 18725                 # semilla reproducible
+sigma = 10
 path = "C:\Proyectos\Prueba-red\Red_llave_compartida\letra.png"
 
 # crear objeto y llave
 # im = Image.open(path).convert("L")  # grayscale
 # arr = np.array(im).astype(np.float32)
-obj_amp = embed_center((N,N), x_train[1])
-pm_obj = random_phase_mask(N, seed=seed)
-pm_key = random_phase_mask(N, seed=3919)
+obj_amp = embed_center((N,N), x_train[0])
+pm_obj = random_phase_mask(N, seed=12345)
+pm_key = random_phase_mask(N, seed=99999999)
 
 # campo del objeto y de la llave (amplitud * fase aleatoria)
 obj_field = obj_amp * pm_obj/np.max(obj_amp)
 # llave: para el ejemplo usamos una distribución gaussiana como amplitud modulada por fase
 x = np.linspace(-N/2, N/2-1, N)
 X, Y = np.meshgrid(x, x)
-sigma = 10
 key_amp = np.exp(-(X**2 + Y**2) / (2 * sigma**2))
 key_field = key_amp * pm_key
 
@@ -95,49 +91,52 @@ recon = np.abs(recon_complex)
 recon = recon / (recon.max() + 1e-12)
 
 # ----------------------- visualización -----------------------
-fig, axes = plt.subplots(2, 3, figsize=(12, 8))
-ax = axes.ravel()
+# fig, axes = plt.subplots(2, 3, figsize=(12, 8))
+# ax = axes.ravel()
+
+# ax[0].imshow(np.abs(joint_field)**2, cmap='gray')
+# ax[0].set_title('Objeto (amplitud)')
+# ax[0].axis('off')
+
+# ax[1].imshow(np.angle(pm_obj), cmap='twilight')
+# ax[1].set_title('Fase aleatoria (obj)')
+# ax[1].axis('off')
+
+# ax[2].imshow(np.angle(pm_key), cmap='twilight')
+# ax[2].set_title('Fase aleatoria (key)')
+# ax[2].axis('off')
+
+# ax[3].imshow(np.log10(JPS + 1e-12), cmap='inferno')
+# ax[3].set_title('Joint Power Spectrum (log)')
+# ax[3].axis('off')
+
+# ax[4].imshow(JPS, cmap='gray')
+# ax[4].set_title('JPS (intensidad)')
+# ax[4].axis('off')
+
+# ax[5].imshow(recon, cmap='gray')
+# ax[5].set_title('Reconstrucción tentativa (abs)')
+# ax[5].axis('off')
+
+#plt.imsave("C:\Proyectos\Prueba-red\input3.png", JPS/np.max(JPS), cmap="gray") 
+
+
+fig = plt.figure(figsize=(10,5))
+plt.subplots_adjust(wspace=0.3) 
+gs = fig.add_gridspec(1, 2, width_ratios=[1, 1])
+
+ax = [fig.add_subplot(gs[0, i]) for i in range(2)]
+fig.suptitle('JPS Simulado', fontsize=15)
 
 ax[0].imshow(np.abs(joint_field)**2, cmap='gray')
-ax[0].set_title('Objeto (amplitud)')
-ax[0].axis('off')
-
-ax[1].imshow(np.angle(pm_obj), cmap='twilight')
-ax[1].set_title('Fase aleatoria (obj)')
-ax[1].axis('off')
-
-ax[2].imshow(np.angle(pm_key), cmap='twilight')
-ax[2].set_title('Fase aleatoria (key)')
-ax[2].axis('off')
-
-ax[3].imshow(np.log10(JPS + 1e-12), cmap='inferno')
-ax[3].set_title('Joint Power Spectrum (log)')
-ax[3].axis('off')
-
-ax[4].imshow(JPS, cmap='gray')
-ax[4].set_title('JPS (intensidad)')
-ax[4].axis('off')
-
-ax[5].imshow(recon, cmap='gray')
-ax[5].set_title('Reconstrucción tentativa (abs)')
-ax[5].axis('off')
-
-plt.tight_layout()
-plt.imsave("C:\Proyectos\Prueba-red\Red_llave_compartida\input1.png", JPS/np.max(JPS), cmap="gray") 
-
+ax[0].set_title(f"Intensidad Plano Objeto")
+ax[0].axis('on')
+ax[0].set_xlabel('pix')
+ax[0].set_ylabel('pix')
+ax[1].imshow(JPS, cmap='gray')
+ax[1].set_title(f"JPS")
+ax[1].axis('on')
+ax[1].set_xlabel('pix')
+ax[1].set_ylabel('pix')
 
 plt.show()
-
-# ----------------------- comentarios finales -----------------------
-print("Hecho. La reconstrucción mostrada es un ejemplo didáctico. Para mejorarla se suele: ")
-print(" - aplicar filtrado en el plano de Fourier para seleccionar solo uno de los términos cruzados")
-print(" - usar ventanas o máscaras de fase conocidas como claves (keys) con mayor complejidad")
-print(" - trabajar con datos experimentales y calibración de desplazamientos y fases.")
-
-
-#-----------------------------------------------------------------------
-
-
-for i in range(40, 60):
-    plt.imshow(x_train[i], cmap='gray')
-    plt.show()

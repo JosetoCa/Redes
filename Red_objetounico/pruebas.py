@@ -52,7 +52,7 @@ def shift_field(field, dx=0, dy=0):
 N = 160                    # tamaño matriz
 offset = 40                # desplazamiento horizontal (en píxeles) entre objeto y llave
 seed = 1234                 # semilla reproducible
-path = "C:\Proyectos\Prueba-red\letra.png"
+path = "C:\Proyectos\Prueba-red\Red_objetounico\letra.png"
 
 # crear objeto y llave
 # im = Image.open(path).convert("L")  # grayscale
@@ -123,7 +123,7 @@ ax[5].set_title('Reconstrucción tentativa (abs)')
 ax[5].axis('off')
 
 plt.tight_layout()
-plt.imsave("C:\Proyectos\Prueba-red\input1.png", JPS/np.max(JPS), cmap="gray") 
+plt.imsave("C:\Proyectos\Prueba-red\Red_objetounico\input1.png", JPS/np.max(JPS), cmap="gray") 
 
 
 plt.show()

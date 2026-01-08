@@ -6,9 +6,9 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 
 # --- Ajustes básicos ---
-MODEL_PATH = "C:\Proyectos\Prueba-red\model_checkpoint.keras"   # fichero Keras que guardaste con ModelCheckpoint
-INPUT_PATH = "C:\Proyectos\Prueba-red\input1.png"                 # archivo de entrada (cambiar según necesites)
-OUTPUT_PATH = "C:\Proyectos\Prueba-red\output1.png"             # archivo a escribir con la predicción
+MODEL_PATH = "C:\Proyectos\Prueba-red\Red_objetounico\model_checkpoint.keras"   # fichero Keras que guardaste con ModelCheckpoint
+INPUT_PATH = "C:\Proyectos\Prueba-red\Red_objetounico\input1.png"                 # archivo de entrada (cambiar según necesites)
+OUTPUT_PATH = "C:\Proyectos\Prueba-red\Red_objetounico\output1.png"             # archivo a escribir con la predicción
 ASSUME_JPS_RANGE_0_1 = True              # si tus JPS están en 0..1. Si no, ajusta escala.
 TARGET_SIZE = None   # si None: intenta inferir N desde la imagen; si quieres forzar N usa (N,N)
 
