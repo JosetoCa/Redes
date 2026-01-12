@@ -1,11 +1,8 @@
 """
-Precomputa muchos JPS's para una solo imagen MNIST y guarda como TFRecord(s) usando
-distintas llaves de encriptación.
-Genera pm_obj.npy y pm_key.npy (llaves) y escribe train/test TFRecords.
-
-Ajustes importantes:
- - N: pixeles del JPS.
- - shards: número de archivos TFRecord para escribir (la idea es usar lectura paralela).
+Precomputa 100 JPS's para cada imagen MNIST y guarda como TFRecord(s) usando
+distintas 100 llaves de encriptación distintas.
+Genera key_seeds.npy (semillas para reproducir las llaves), metadata.npy 
+y escribe train/test TFRecords.
 """
 # ---------- librería ----------
 # Para el manejo de los archivos
@@ -168,7 +165,7 @@ def write_dataset_with_global_keys(mnist_images, out_dir, key_seeds_path,
     Ahora escribe archivos con nombre: {prefix}_{shard_idx:04d}.tfrecord
     mnist_images: numpy array shape (num_images,28,28)
     key_seeds_path: path a key_seeds.npy
-    prefix: string, p.e. "train_jps" o "test_jps"
+    prefix: string
     """
     os.makedirs(out_dir, exist_ok=True)
     key_seeds = np.load(key_seeds_path)
@@ -184,7 +181,7 @@ def write_dataset_with_global_keys(mnist_images, out_dir, key_seeds_path,
         if cnt == 0:
             continue
         tfname = os.path.join(out_dir, f"{prefix}_{shard_idx:04d}.tfrecord")
-        writer = tf.io.TFRecordWriter(tfname)  # sin compresión
+        writer = tf.io.TFRecordWriter(tfname)
         for _ in tqdm(range(cnt), desc=f"{prefix} shard {shard_idx:04d}"):
             img_idx = sample_idx // num_keys
             key_id = sample_idx % num_keys

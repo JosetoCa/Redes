@@ -1,7 +1,6 @@
 """
 Network.py — pipeline y entrenamiento para: entrada = JPS, salida = imagen MNIST.
-Lectura paralela de shards, parser compatible con los TFRecords actuales
-(donde el campo de la "etiqueta" es 'mnist_raw' con la imagen 28x28 guardada como float32).
+Lectura paralela de shards, parser compatible con los TFRecords.
 Incluye visualización de resultados sobre ejemplos de test.
 """
 import glob
@@ -11,41 +10,61 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # --- GPU setup ---
-gpus = tf.config.list_physical_devices('GPU')
+gpus = tf.config.list_physical_devices('GPU') # Lista las GPU detectadas por TF
 if gpus:
     try:
         for gpu in gpus:
-            tf.config.experimental.set_memory_growth(gpu, True)
+            # Habilita el crecimiento dinámico de memoria en cada GPU.
+            # Asigna VRAM según se vaya usando.
+            tf.config.experimental.set_memory_growth(gpu, True) 
         print(f"Usando GPU: {gpus}")
     except Exception as e:
         print("Error al configurar GPU:", e)
 
 # --- desactivar mixed precision por compatibilidad/estabilidad ---
+# Para lograr compatabilidad entre los cálculos en GPU y CPU se fija una política
+# global para las variables, todas en float32
 try:
     from tensorflow.keras import mixed_precision
     mixed_precision.set_global_policy('float32')   # usar float32 en todo
-    print("Usando float32 (mixed precision desactivada) para evitar conflictos XLA/mixed-precision.")
+    print("Usando float32 (mixed precision desactivada) para evitar " \
+    "conflictos XLA/mixed-precision.")
 except Exception as e:
     print("No se pudo configurar mixed precision (se sigue con float32):", e)
 
 
 # --- fix: desactivar XLA para evitar conflicto con mixed precision ---
+# XLA es un compilador de álgebra lineal que acelera los modelos de TF sin 
+# cambiar el código fuente, lo desactivo porque no he sabido implementarlo con
+# mixed_precision, necesaria para el XLA.
 tf.config.optimizer.set_jit(False)
 print("XLA desactivado (evita conflicto mixed precision + ReluGrad)")
 
 
 # ---------- parámetros ----------
+# Esto propio de la forma en que se crean los .tfrecord en datos.py
 tfrecord_train_pattern = "data_jps_jtcgeneral/train_jps_*.tfrecord"
 tfrecord_test_pattern  = "data_jps_jtcgeneral/test_jps_*.tfrecord"
 compression = None   # None o "GZIP"  -> debe coincidir con lo usado al escribir
+# Cantidad de ejemplos sobre los que se calcula el gradiente para 
+# actualizar pesos y bias.
 batch_size = 50
+# el shuffle_buffer es la cantidad de muestras del dataset que viven en RAM sobre 
+# las que se hacen permutaciones para evitar que la red encuentre patrones
+# por el orden del dataset.
 shuffle_buffer = 4096
+# El Autotune hace que TF establezca cuántos elementos procesar en paralelo en el ds.map
+# en prefetech para que automáticamente ponga los batches en la GPU
 AUTOTUNE = tf.data.AUTOTUNE
+# Estos procesos de paralelización están automatizados en TF y termina siendo sencillo
+# implementarlos en este entorno.
 EPOCHS =20
 VIS_SAMPLES = 6      # cuántos ejemplos visualizar del test
 
 # ---------- parser ----------
+# Esta es la función que toma un ejemplo del tfrecord y  devuelve el JPS y el MNIST
 def parse_tfrecord_normalized(example_proto):
+    # Estas son las posibles características en un ejemplo del .tfrecord
     features = {
         'N': tf.io.FixedLenFeature([], tf.int64),
         'img_idx': tf.io.FixedLenFeature([], tf.int64),
@@ -54,21 +73,25 @@ def parse_tfrecord_normalized(example_proto):
         'jps_raw': tf.io.FixedLenFeature([], tf.string, default_value=''),
         'jps_png': tf.io.FixedLenFeature([], tf.string, default_value=''),
     }
+    # Este es el elemento parseado, example_proto es el ejemplo que se obtiene
+    # apartir del reader de los datasets (ver make_dataset)
     parsed = tf.io.parse_single_example(example_proto, features)
+    # Se extrea la característica "N" y se establece en .int32.
+    # Extraerla implica tomar los bits relacionados a la feature 'N' y darles un formato
     N = tf.cast(parsed['N'], tf.int32)
-
+    # Toma los bits codificados PNG, los decodifica y da el formato float32 y normaliza.
     def decode_png():
         j = tf.io.decode_png(parsed['jps_png'], channels=1)
         return tf.cast(j, tf.float32) / 255.0
-
+    # Toma los bits del feature 'jps_raw' y les da un formato float32 y normaliza.
     def decode_raw():
         j = tf.io.decode_raw(parsed['jps_raw'], out_type=tf.uint8)
         j = tf.reshape(j, (N, N, 1))
         return tf.cast(j, tf.float32) / 255.0
-
+    # Se elige entre decodificar PNG o RAW, según lo que haya en los features.
     jps = tf.cond(tf.greater(tf.strings.length(parsed['jps_png']), 0), decode_png, decode_raw)
     jps.set_shape([None, None, 1])
-
+    # Toma los bits RAW del MNIST y lo transforma a formato tf y normaliza
     mnist = tf.io.decode_raw(parsed['mnist_raw'], out_type=tf.uint8)
     mnist = tf.reshape(mnist, (28, 28, 1))
     mnist = tf.cast(mnist, tf.float32) / 255.0
@@ -76,29 +99,42 @@ def parse_tfrecord_normalized(example_proto):
 
     return jps, mnist
 # ---------- dataset (lectura paralela de shards) ----------
-def make_dataset(tfrecord_pattern, batch_size=64, shuffle=True, compression=None, repeat=False):
+def make_dataset(tfrecord_pattern, batch_size, shuffle=True, compression=None, repeat=False):
+    # Se construye un dataset de elementos 'strings' que son las rutas a los .tfrecords
     files = tf.data.Dataset.list_files(tfrecord_pattern, shuffle=shuffle)
+    # El reader crea un Dataset (objeto para leer el .tfrecord) para leer los ejemplos
+    # contenidos en los .tfrecord
     # se pasa buffer_size grande al TFRecordDataset para mejorar read throughput
     def reader(f):
         return tf.data.TFRecordDataset(f, compression_type=compression, buffer_size=8*1024*1024)
+    # interleave abre múltiples datasets haciendo uso del reader
+    # mezcla los elementos provenientes los distintos datasets y produce un un
+    # cycle_length es el número de datasets abiertos y num_parallel_calls la cantidad
+    # de llamadas del dataset en paralelo.
     ds = files.interleave(
         lambda f: reader(f),
         cycle_length=AUTOTUNE, num_parallel_calls=AUTOTUNE, deterministic=False
     )
+    # El shuffle se encarga de combinar (revolver) los ejemplos llamados para mayor azar.
     if shuffle:
         ds = ds.shuffle(shuffle_buffer)
+    # El mapa toma los bits que da el reader y parsea los datos para que estén listos a
+    # entrenar la red, (JPS, MNIST). Este parseo se hace en paralelo con el AUTOTUNE.
     ds = ds.map(parse_tfrecord_normalized, num_parallel_calls=AUTOTUNE)
+    # repeat se usa para que 
     if repeat:
         ds = ds.repeat()
+    # Agrupa las muestras parseadas por el map en batches
     ds = ds.batch(batch_size)
-    # si hay GPU, prefetch directo a dispositivo para quitar overhead de host->device
+    # si hay GPU, hace prefetch (pone los datos inmediatamente en la GPU) para cuando se
+    # necesiten.
     if tf.config.list_physical_devices('GPU'):
         ds = ds.apply(tf.data.experimental.prefetch_to_device('/GPU:0'))
     ds = ds.prefetch(AUTOTUNE)
     return ds
 
 
-# ---------- modelo: autoencoder simple (entrada: JPS -> salida: 28x28 image) ----------
+# ---------- modelo: U-net simple (entrada: JPS -> salida: 28x28 image) ----------
 from tensorflow.keras import layers, models, regularizers
 
 def build_model_with_skips(input_shape, l2=1e-6, dropout_rate=0.0):
@@ -108,6 +144,14 @@ def build_model_with_skips(input_shape, l2=1e-6, dropout_rate=0.0):
     l2: kernel regularization
     dropout_rate: SpatialDropout en bottleneck (opcional)
     """
+    # Bloque convolucional:   
+    # Capa convolucional, con padding = 'same' para que se preserve el tamño
+    #   y sea más fácil conectar encoder y decoder. Con regularización l2, para evitar 
+    #   overfitting. Sin bais, pues el Batch_normalitazion agrega un factor y un sumando.
+    # Capa de Batch_normalitazion, normaliza alrededor de 0 y asigna una desviación 
+    #   estándar.
+    # Capa de activación a la que entra el valor lineal de las capas anteriores. 
+    #   Se usa Relu.  
     def conv_block(x, filters, k=3):
         x = layers.Conv2D(filters, k, padding='same',
                           kernel_regularizer=regularizers.l2(l2),
@@ -115,10 +159,12 @@ def build_model_with_skips(input_shape, l2=1e-6, dropout_rate=0.0):
         x = layers.BatchNormalization()(x)
         x = layers.Activation('relu')(x)
         return x
-
+    # La entrada, el JPS
     inp = layers.Input(shape=input_shape)   # (N,N,1)
 
     # --- Encoder (guardar skips) ---
+    # Se pone MaxPool con kernel = 2 y padding='same', lo que reduce a la 
+    # mitad la resolución de la entrada.
     c1 = conv_block(inp, 32)
     c1 = conv_block(c1, 32)
     p1 = layers.MaxPool2D(2, padding='same')(c1)   # /2
@@ -129,7 +175,7 @@ def build_model_with_skips(input_shape, l2=1e-6, dropout_rate=0.0):
 
     c3 = conv_block(p2, 128)
     c3 = conv_block(c3, 128)
-    p3 = layers.MaxPool2D(2, padding='same')(c3)   # /8  (opcional)
+    p3 = layers.MaxPool2D(2, padding='same')(c3)   # /8 
 
     # Bottleneck
     b = conv_block(p3, 256)
@@ -153,7 +199,10 @@ def build_model_with_skips(input_shape, l2=1e-6, dropout_rate=0.0):
     u1 = conv_block(u1, 32)
     u1 = conv_block(u1, 32)
 
-    # Forzar salida 28x28 (si el input N != 28) y salida final
+    # En esta capa se hace una interpolación por promedio para reducir la 
+    # la resolución de la imagen de salida. La U-net es por definición simétrica,
+    # si se quiere que la salida sea un MNIST, se vuelve necesario o romper la
+    # simetría o aplicar o resizing.
     x = layers.Resizing(28, 28, interpolation='bilinear')(u1)
     out = layers.Conv2D(1, 3, padding='same', activation='sigmoid', dtype='float32')(x)
 
@@ -210,28 +259,26 @@ def visualize_predictions(jps_batch, target_batch, pred_batch, n=6, save_path=No
 # ---------- main ----------
 if __name__ == "__main__":
 
-    # datasets
+    # crear los datasets de entrenamiento y validación
     ds_train = make_dataset(tfrecord_train_pattern, batch_size=batch_size, shuffle=True, compression=compression, repeat=True)
     ds_test  = make_dataset(tfrecord_test_pattern,  batch_size=batch_size, shuffle=False, compression=compression, repeat=False)
-    # try:
-    #     ds_test = ds_test.cache()
-    #     print("ds_test cached")
-    # except Exception:
-    #     pass
+    # Toma 1 batch de entremiento para su shape, tipo y rango
     for x,y in ds_train.take(1):
         print("train batch shapes:", x.shape, y.shape, "dtype:", x.dtype, y.dtype, "range y:", tf.reduce_min(y).numpy(), tf.reduce_max(y).numpy())
-
-
     # obtener input shape del primer batch
     for x_batch, y_batch in ds_train.take(1):
         input_shape = x_batch.shape[1:]   # (N,N,1)
-    print("Input shape:", input_shape)
     model = build_model_with_skips(input_shape, l2=1e-6, dropout_rate=0.0)
+    # El optimizador del modelo se establece con Adam y un LR de 10^{-4}
+    # La función de costo es la entropía cruzada binaria y se agrega
+    # como métrica el valor absoluto medio, para saber qué tan cerca va de la MNIST,
     model.compile(optimizer=tf.keras.optimizers.Adam(1e-4),
               loss='binary_crossentropy',
               metrics=[tf.keras.metrics.MeanAbsoluteError()])
 
     # callbacks
+    # Se guarda el mejor modelo según el valor de la función de pérdida.
+    # Se reduce el LR si val_loss no mejora. También utiliza EarlyStopping.
     callbacks = [
     tf.keras.callbacks.ModelCheckpoint("model_checkpoint.keras", save_best_only=True, monitor='val_loss'),
     tf.keras.callbacks.ReduceLROnPlateau(patience=3, factor=0.5, monitor='val_loss'),
@@ -240,27 +287,25 @@ if __name__ == "__main__":
     ]
 
     # Entrenamiento: ds_train está en repeat=True, por se pasa steps_per_epoch
-    train_files = len(glob.glob(tfrecord_train_pattern))
-    
-    steps_per_epoch = 3000000 // batch_size
+    train_files = len(glob.glob(tfrecord_train_pattern)) # Se cuentan los shards.
+    # De este modo se recorre todo el dataset
+    steps_per_epoch = 3000000 // batch_size 
 
-    # comprueba que la salida esperada (target) y la salida del modelo tengan shape compatible
+    # comprueba que la salida esperada y la salida del modelo tengan shape compatible
     # aquí asumimos target (28,28,1)
     assert y_batch.shape[1:] == (28,28,1), f"Target shape inesperada: {y_batch.shape[1:]}"
     
-    # 1. shapes / summary
-    model.summary()
+    # shapes / summary
+    model.summary() # imprime el número de capas y parámetros de la red
 
-    # 2. rango de datos en un batch de test (sanity check)
-    for x_batch, y_batch in ds_test.take(1):
-        print("jps shape, min/max:", x_batch.shape, x_batch.numpy().min(), x_batch.numpy().max())
-        print("target shape, min/max:", y_batch.shape, y_batch.numpy().min(), y_batch.numpy().max())
-        break
-
-    # 3. prueba predict antes de entrenar (comprobar que no da error shape/memory)
+    # prueba predict antes de entrenar (comprobar que no da error shape/memory)
+    # toma un batch del dataset de test, luego predicepara el primer ejemplo del batch
+    # esto para verificar que el modelo construido funciona
     x_sample, _ = next(iter(ds_test))
     pred = model.predict(x_sample[:1])
     print("pred shape, min/max:", pred.shape, pred.min(), pred.max())
+
+    # Aquí está el entremaniendo de la red
     history = model.fit(
     ds_train,
     epochs=EPOCHS,
