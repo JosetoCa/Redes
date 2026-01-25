@@ -10,16 +10,15 @@ import matplotlib.pyplot as plt
 
 # IMPORTA tu build_robust_model desde autoencoder.py
 # Asegúrate de que autoencoder.py esté en el mismo folder o en PYTHONPATH
-from autoencoder import build_robust_model
+from Resnet import build_robust_model
 
 # --- Ajustes básicos ---
 MODEL_WEIGHTS = r"C:\\Proyectos\\Prueba-red\\final.weights.h5"
 MODEL_FULL = r"C:\\Proyectos\\Prueba-red\\final_model.keras"
-INPUT_PATH = r"C:\\Proyectos\\Prueba-red\\input3.png"
-OUTPUT_PATH = r"C:\\Proyectos\\Prueba-red\\output3.png"
+INPUT_PATH = r"C:\\Proyectos\\Prueba-red\\inputg.png"
+OUTPUT_PATH = r"C:\\Proyectos\\Prueba-red\\outputg.png"
 ASSUME_JPS_RANGE_0_1 = True
-TARGET_SIZE = (160, 160)  # tu modelo espera 160x160; si quieres forzar otro tamaño, cámbialo
-
+TARGET_SIZE = (160, 160)
 
 def print_versions():
     import sys

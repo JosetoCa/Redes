@@ -2,7 +2,7 @@ import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
 from numpy.fft import fft2, ifft2, fftshift, ifftshift
-
+from PIL import Image
 # 1. Cargar MNIST (ya preparado por Keras)
 (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
 
@@ -49,14 +49,16 @@ N = 160                    # tamaño matriz
 offset = 40                # desplazamiento horizontal (en píxeles) entre objeto y llave
 seed = 18725                 # semilla reproducible
 sigma = 10
-path = "C:\Proyectos\Prueba-red\Red_llave_compartida\letra.png"
+path = r"C:\Proyectos\Prueba-red\god.png"
 
 # crear objeto y llave
-# im = Image.open(path).convert("L")  # grayscale
-# arr = np.array(im).astype(np.float32)
-obj_amp = embed_center((N,N), x_train[0])
+im = Image.open(path).convert("L")  # grayscale
+arr = np.array(im).astype(np.float32)
+obj_amp = embed_center((N,N), arr)
+# plt.imsave("C:\Proyectos\Prueba-red\MNIST1.png", x_train[0]/np.max(x_train[0]), cmap="gray") 
+# obj_amp = embed_center((N,N), x_train[0])
 pm_obj = random_phase_mask(N, seed=12345)
-pm_key = random_phase_mask(N, seed=99999999)
+pm_key = random_phase_mask(N, seed=12345)
 
 # campo del objeto y de la llave (amplitud * fase aleatoria)
 obj_field = obj_amp * pm_obj/np.max(obj_amp)
@@ -118,7 +120,7 @@ recon = recon / (recon.max() + 1e-12)
 # ax[5].set_title('Reconstrucción tentativa (abs)')
 # ax[5].axis('off')
 
-#plt.imsave("C:\Proyectos\Prueba-red\input3.png", JPS/np.max(JPS), cmap="gray") 
+plt.imsave("C:\Proyectos\Prueba-red\inputg.png", JPS/np.max(JPS), cmap="gray") 
 
 
 fig = plt.figure(figsize=(10,5))

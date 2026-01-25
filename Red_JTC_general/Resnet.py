@@ -1,9 +1,9 @@
 """
-Network.py — Arquitectura Robusta (ResNet Autoencoder)
+Resnet.py — Arquitectura ResNet Autoencoder
 Diseñada para generalización en datasets masivos (3M muestras).
-- Sin U-Net Skips (evita paso de ruido).
-- Bloques Residuales (alta capacidad de aprendizaje).
-- Flujo de datos continuo (sin pausas largas).
+- Sin U-Net Skips.
+- Bloques Residuales con alta capacidad de aprendizaje.
+- Flujo de datos continuo.
 """
 import glob
 import os
@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 from tensorflow.keras import layers, models, regularizers
 
 # --- GPU Setup ---
+# Se buscan y configuran las GPU para su uso
 gpus = tf.config.list_physical_devices('GPU')
 if gpus:
     try:
@@ -21,33 +22,46 @@ if gpus:
     except Exception as e:
         print(e)
 
-# Mixed Precision para RTX 4090 (Velocidad x2)
+# Mixed Precision para RTX 4090
+# Se habilita el uso de mixed_precision
+# Para lograr compatabilidad entre los cálculos en GPU y CPU se fija una política
+# global para las variables, todas en float32
 from tensorflow.keras import mixed_precision
 mixed_precision.set_global_policy('float32')
 
 # ==========================================
 # PARÁMETROS DE ENTRENAMIENTO (ESTRATEGIA 3M)
 # ==========================================
-# No intentamos recorrer los 3M en una sola "epoch" de Keras.
+# No se inteta recorrer los 3M en una sola "epoch" de Keras.
 # Hacemos "checkpoints" visuales cada 2000 pasos.
+# Se pasa por épocas pequeñas y se recorren unas 10 veces los 3 millones de datos.
+# Cantidad de ejemplos sobre los que calcula el optimizador
 BATCH_SIZE = 128
 VIRTUAL_STEPS_PER_EPOCH = 2000  # ~256,000 imágenes por "época" reportada
 VIS_SAMPLES = 6
-# Si tienes 3M de datos, recorrerás el dataset completo cada ~12 épocas virtuales.
+# El Shuffle_buffer no se deja como un parámetro, se asigna directamente a un 
+# valor de 10000.
+# Con 3M de datos se recorreree el dataset completo cada ~12 épocas virtuales.
 epochs = 50
 tfrecord_train_pattern = "data_jps_jtcgeneral/train_jps_*.tfrecord"
 tfrecord_test_pattern  = "data_jps_jtcgeneral/test_jps_*.tfrecord"
+# El Autotune hace que TF establezca cuántos elementos procesar en paralelo en el ds.map
+# en prefetech para que automáticamente ponga los batches en la GPU
 AUTOTUNE = tf.data.AUTOTUNE
 
 # ==========================================
 # PARSER & DATASET
 # ==========================================
+# Esta es la función que toma un ejemplo del tfrecord y  devuelve el JPS y el MNIST
 def parse_tfrecord_optimized(example_proto):
+    # Estas son las características que se necesitan extraer, con su nombre y tipo
     features = {
         'N': tf.io.FixedLenFeature([], tf.int64),
         'mnist_raw': tf.io.FixedLenFeature([], tf.string),
         'jps_raw': tf.io.FixedLenFeature([], tf.string, default_value=''),
     }
+    # Este es el elemento parseado, example_proto es el ejemplo que se obtiene
+    # apartir del reader de los datasets (ver make_dataset)
     parsed = tf.io.parse_single_example(example_proto, features)
     
     # Entrada: JPS (160x160)
@@ -63,7 +77,7 @@ def parse_tfrecord_optimized(example_proto):
     return jps, mnist
 
 def make_dataset(tfrecord_pattern, batch_size=128, shuffle=True, repeat=True):
-    # repeat=True es CRÍTICO para entrenar sobre los 3M sin reiniciar el iterador
+    # repeat=True es importante para entrenar sobre los 3M sin reiniciar el iterador
     files = tf.data.Dataset.list_files(tfrecord_pattern, shuffle=shuffle)
     
     def reader(f):
@@ -89,7 +103,7 @@ def make_dataset(tfrecord_pattern, batch_size=128, shuffle=True, repeat=True):
 def residual_block(x, filters, stride=1):
     """Bloque residual estándar para aprendizaje profundo estable"""
     shortcut = x
-    # Si cambiamos dimensiones (stride > 1), ajustamos el shortcut
+    # Si cambian dimensiones (stride > 1), se ajusta el shortcut
     if stride > 1 or x.shape[-1] != filters:
         shortcut = layers.Conv2D(filters, 1, strides=stride, padding='same')(x)
         shortcut = layers.BatchNormalization()(shortcut)
@@ -111,7 +125,6 @@ def build_robust_model(input_shape):
     inp = layers.Input(shape=input_shape)
 
     # --- ENCODER PROFUNDO ---
-    # Extraer características abstractas del JPS
     x = layers.Conv2D(32, 7, strides=2, padding='same')(inp) # 80x80
     x = layers.BatchNormalization()(x)
     x = layers.Activation('relu')(x)
@@ -123,18 +136,16 @@ def build_robust_model(input_shape):
     x = residual_block(x, 128)           # 20x20
     x = residual_block(x, 256, stride=2) # 10x10
     
-    # --- BOTTLENECK (La "Magia") ---
-    # Aquí la red debe descartar la llave y quedarse solo con el dígito
+    # --- BOTTLENECK ---
     x = layers.Flatten()(x)
     x = layers.Dense(512, activation='relu')(x) 
-    x = layers.Dropout(0.3)(x) # Ayuda a generalizar ante llaves nuevas
+    x = layers.Dropout(0.3)(x) 
     
     # Proyección al Decoder
     x = layers.Dense(7 * 7 * 256, activation='relu')(x)
     x = layers.Reshape((7, 7, 256))(x)
 
     # --- DECODER ---
-    # Reconstrucción limpia
     x = layers.Conv2DTranspose(128, 3, strides=2, padding='same')(x) # 14x14
     x = layers.BatchNormalization()(x)
     x = layers.Activation('relu')(x)
@@ -201,7 +212,7 @@ def visualize_predictions(jps_batch, target_batch, pred_batch, n=6, save_path=No
 if __name__ == "__main__":
     # Dataset infinito para train
     ds_train = make_dataset(tfrecord_train_pattern, batch_size=BATCH_SIZE, repeat=True)
-    # Dataset finito para validación (usamos una parte para que sea rápido)
+    # Dataset finito para validación (se usa solo una parte para que sea rápido)
     ds_test  = make_dataset(tfrecord_test_pattern, batch_size=BATCH_SIZE, repeat=False).take(100)
 
     model = build_robust_model((160, 160, 1))
